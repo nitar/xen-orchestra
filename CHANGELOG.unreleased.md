@@ -12,6 +12,7 @@
 > Users must be able to say: “I had this issue, happy to know it's fixed”
 
 - [Rolling Pool Update] Don't fail if `load-balancer` plugin is missing (Starter and Enterprise plans)
+- [web] Show more significant numbers when relevant (for example 1.28 TB of memory instead of 1TB)
 
 ### Packages to release
 
@@ -32,4 +33,5 @@
 
 - xen-api major
 - vhd-cli minor
+- xo-web patch
 - xo-server patch
