@@ -35,7 +35,7 @@ import PoolTab from './PoolTab'
 import Signin from './Signin/index'
 import StyleGuide from './StyleGuide/index'
 import TabConsole from './TabConsole'
-import XapiConnection, { ObjectsByType, Vm } from '../libs/xapi'
+import XapiConnection, { ObjectsByType, Pool, Vm } from '../libs/xapi'
 
 const drawerWidth = 240
 
@@ -256,6 +256,7 @@ interface Effects {
 
 interface Computed {
   objectsFetched: boolean
+  pool?: Pool
   url: string
   vms?: Map<string, Vm>
 }
@@ -322,6 +323,7 @@ const App = withState<State, Props, Effects, Computed, ParentState, ParentEffect
     },
     computed: {
       objectsFetched: state => state.objectsByType !== undefined,
+      pool: state => (state.objectsFetched ? state.objectsByType?.get('pool')?.keySeq().first() : undefined),
       vms: state =>
         state.objectsFetched
           ? state.objectsByType
@@ -345,7 +347,7 @@ const App = withState<State, Props, Effects, Computed, ParentState, ParentEffect
             <Router>
               <Switch>
                 <Route exact path='/'>
-                  <Redirect to='/infrastructure/pool/dashboard' />
+                  <Redirect to={`/infrastructure/pools/${state.pool.$id}/dashboard`} />
                 </Route>
                 <Route exact path='/vm-list'>
                   {state.vms !== undefined && (

@@ -5,7 +5,7 @@ import Typography from '@mui/material/Typography'
 import { withState } from 'reaclette'
 
 import IntlMessage from '../../../components/IntlMessage'
-import ObjectStatus from './objectStatus'
+import ObjectStatus from './ObjectStatus'
 
 interface ParentState {}
 

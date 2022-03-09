@@ -65,13 +65,13 @@ const Infrastructure = withState<State, Props, Effects, Computed, ParentState, P
       <LeftPanel>
         <TreeView
           defaultSelectedNodes={selectedNodestoArray(
-            props.location.pathname === '/infrastructure/pool/dashboard' ? selectedPool : selectedVm
+            props.location.pathname.startsWith('/infrastructure/pools') ? selectedPool : selectedVm
           )}
         />
       </LeftPanel>
       <MainPanel>
         <Switch>
-          <Route exact path='/infrastructure/pool/dashboard'>
+          <Route exact path={`/infrastructure/pools/${selectedPool}/dashboard`}>
             <Pool id={selectedPool} />
           </Route>
           <Route

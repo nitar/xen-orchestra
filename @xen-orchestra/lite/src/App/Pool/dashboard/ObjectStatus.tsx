@@ -44,7 +44,7 @@ const getHostPowerState = (host: Host) => {
   return $metrics ? ($metrics.live ? 'Running' : 'Halted') : 'Unknown'
 }
 
-// TODO: create our own CircularProgress component to display active/inactive colors
+// TODO: use CircularProgress component when https://github.com/vatesfr/xen-orchestra/pull/6128 is merged
 const ObjectStatus = withState<State, Props, Effects, Computed, ParentState, ParentEffects>(
   {
     computed: {
