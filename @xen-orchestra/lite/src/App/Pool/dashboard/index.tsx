@@ -4,8 +4,9 @@ import styled from 'styled-components'
 import Typography from '@mui/material/Typography'
 import { withState } from 'reaclette'
 
-import IntlMessage from '../../../components/IntlMessage'
 import ObjectStatus from './ObjectStatus'
+
+import IntlMessage from '../../../components/IntlMessage'
 
 interface ParentState {}
 
