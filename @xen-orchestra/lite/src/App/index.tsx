@@ -35,6 +35,7 @@ import PoolTab from './PoolTab'
 import Signin from './Signin/index'
 import StyleGuide from './StyleGuide/index'
 import TabConsole from './TabConsole'
+
 import XapiConnection, { ObjectsByType, Pool, Vm } from '../libs/xapi'
 
 const drawerWidth = 240
