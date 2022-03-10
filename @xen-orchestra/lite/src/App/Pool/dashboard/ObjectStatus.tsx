@@ -31,12 +31,25 @@ interface Computed {
   nInactive?: number
 }
 
+const DEFAULT_MARGIN = { mt: 2 }
+const TYPOGRAPHY_SX = { mb: 2 }
+
 const ObjectStatusContainer = styled.div`
   display: flex;
   overflow: hidden;
   flex-direction: row;
   align-content: space-between;
   margin-bottom: 1em;
+`
+
+const CircularProgressPanel = styled.div`
+  margin-left: 2em;
+`
+
+const GridPanel = styled.div`
+  margin-left: 2em;
+  width: 100%;
+  height: 100%;
 `
 
 const getHostPowerState = (host: Host) => {
@@ -74,7 +87,7 @@ const ObjectStatus = withState<State, Props, Effects, Computed, ParentState, Par
 
     return (
       <ObjectStatusContainer>
-        <div style={{ marginLeft: '2em' }}>
+        <CircularProgressPanel>
           <Box sx={{ position: 'relative', display: 'inline-flex' }}>
             <CircularProgress
               variant='determinate'
@@ -99,11 +112,11 @@ const ObjectStatus = withState<State, Props, Effects, Computed, ParentState, Par
               </Typography>
             </Box>
           </Box>
-        </div>
-        <div style={{ marginLeft: '2em', width: '100%', height: '100%' }}>
+        </CircularProgressPanel>
+        <GridPanel>
           <Grid container sx={{ color: '1C1C1C' }}>
             <Grid item xs={12}>
-              <Typography sx={{ mb: 2 }} variant='h5' component='div'>
+              <Typography sx={TYPOGRAPHY_SX} variant='h5' component='div'>
                 <IntlMessage id={type === 'VM' ? 'vms' : 'hosts'} />
               </Typography>
             </Grid>
@@ -134,17 +147,17 @@ const ObjectStatus = withState<State, Props, Effects, Computed, ParentState, Par
               </Typography>
             </Grid>
             <Grid item xs={10}>
-              <Typography variant='caption' component='div' sx={{ mt: 2 }}>
+              <Typography variant='caption' component='div' sx={DEFAULT_MARGIN}>
                 <IntlMessage id='total' />
               </Typography>
             </Grid>
             <Grid item xs={2}>
-              <Typography variant='caption' component='div' sx={{ mt: 2 }}>
+              <Typography variant='caption' component='div' sx={DEFAULT_MARGIN}>
                 {nTotal}
               </Typography>
             </Grid>
           </Grid>
-        </div>
+        </GridPanel>
       </ObjectStatusContainer>
     )
   }

@@ -20,6 +20,8 @@ interface Effects {}
 
 interface Computed {}
 
+const DEFAULT_STYLE = { m: 2 }
+
 const Container = styled.div`
   display: flex;
   overflow: hidden;
@@ -39,11 +41,11 @@ const Panel = styled.div`
 const Dashboard = withState<State, Props, Effects, Computed, ParentState, ParentEffects>({}, () => (
   <Container>
     <Panel>
-      <Typography variant='h4' component='div' sx={{ m: 2 }}>
+      <Typography variant='h4' component='div' sx={DEFAULT_STYLE}>
         <IntlMessage id='status' />
       </Typography>
       <ObjectStatus type='host' />
-      <Divider variant='middle' sx={{ m: 2 }} />
+      <Divider variant='middle' sx={DEFAULT_STYLE} />
       <ObjectStatus type='VM' />
     </Panel>
   </Container>

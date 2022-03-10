@@ -4,9 +4,10 @@ import { withState } from 'reaclette'
 import { withRouter } from 'react-router'
 import { Switch, Route, RouteComponentProps } from 'react-router-dom'
 
+import Pool from './Pool'
 import TabConsole from './TabConsole'
 import TreeView from './TreeView'
-import Pool from './Pool'
+
 import { ObjectsByType } from '../libs/xapi'
 
 const Container = styled.div`
