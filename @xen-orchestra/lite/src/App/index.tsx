@@ -39,6 +39,7 @@ import TabConsole from './TabConsole'
 import XapiConnection, { ObjectsByType, Pool, Vm } from '../libs/xapi'
 
 const drawerWidth = 240
+const redirectPaths = ['/', '/infrastructure']
 
 interface AppBarProps extends MuiAppBarProps {
   open?: boolean
@@ -347,7 +348,7 @@ const App = withState<State, Props, Effects, Computed, ParentState, ParentEffect
           <>
             <Router>
               <Switch>
-                <Route exact path='/'>
+                <Route exact path={redirectPaths}>
                   <Redirect to={`/infrastructure/pools/${state.pool.$id}/dashboard`} />
                 </Route>
                 <Route exact path='/vm-list'>
