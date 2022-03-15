@@ -8,6 +8,7 @@
 > Users must be able to say: “Nice enhancement, I'm eager to test it”
 
 - [REST API] Expose networks, VBDs, VDIs and VIFs
+- [Delta Backup/Restore] Ability to ignore some VDIs (PR [#6143](https://github.com/vatesfr/xen-orchestra/pull/6143))
 
 ### Bug fixes
 
@@ -35,4 +36,7 @@
 - xen-api major
 - @xen-orchestra/xapi minor
 - vhd-cli minor
-- xo-server patch
+- @xen-orchestra/backups minor
+- @xen-orchestra/proxy minor
+- xo-server minor
+- xo-web minor
