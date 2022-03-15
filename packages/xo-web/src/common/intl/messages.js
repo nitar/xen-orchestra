@@ -1824,6 +1824,7 @@ const messages = {
     'This VM contains a duplicate MAC address or has the same MAC address as another running VM. Do you want to continue?',
   vmsWithDuplicatedMacAddressesMessage:
     '{nVms, number} VM{nVms, plural, one {} other {s}} contain{nVms, plural, one {s} other {}} duplicate MAC addresses or {nVms, plural, one {has} other {have}} the same MAC addresses as other running VMs. Do you want to continue?',
+  vdiIgnore: 'Ignore this VDI',
 
   // ----- Servers -----
   enableServerErrorTitle: 'Enable server',

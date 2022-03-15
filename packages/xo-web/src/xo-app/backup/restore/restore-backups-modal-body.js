@@ -19,9 +19,15 @@ export default class RestoreBackupsModalBody extends Component {
 
   _getDisks = createSelector(
     () => this.state.backup,
-    backup =>
+    () => this.state.targetSrs.mapVdisSrs,
+    (backup, mapVdisSrs) =>
       backup !== undefined && backup.mode === 'delta'
-        ? backup.disks.reduce((vdis, vdi) => ({ ...vdis, [vdi.uuid]: vdi }), {})
+        ? backup.disks.reduce(
+            (vdis, vdi) =>
+              mapVdisSrs !== undefined && mapVdisSrs[vdi.uuid] === null ? vdis : { ...vdis, [vdi.uuid]: vdi },
+
+            {}
+          )
         : {}
   )
 
@@ -40,6 +46,7 @@ export default class RestoreBackupsModalBody extends Component {
           <div>
             <div className='mb-1'>
               <ChooseSrForEachVdisModal
+                addRemoveVdis
                 onChange={this.linkState('targetSrs')}
                 placeholder={_('importBackupModalSelectSr')}
                 required
