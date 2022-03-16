@@ -1,12 +1,26 @@
-import aws from '@sullux/aws-sdk'
+import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
+  CopyObjectCommand,
+  CreateMultipartUploadCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client, UploadPartCommand,
+  UploadPartCopyCommand,
+} from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
+import { NodeHttpHandler } from '@aws-sdk/node-http-handler';
 import assert from 'assert'
-import http from 'http'
-import https from 'https'
+import { Agent as HttpAgent } from 'http'
+import { Agent as HttpsAgent } from 'https';
 import pRetry from 'promise-toolbox/retry'
 import { createLogger } from '@xen-orchestra/log'
 import { decorateWith } from '@vates/decorate-with'
+import { PassThrough, pipeline } from 'stream';
 import { parse } from 'xo-remote-parser'
-
 import RemoteHandlerAbstract from './abstract'
 import { basename, join, split } from './_path'
 import { asyncEach } from '@vates/async-each'
@@ -27,30 +41,28 @@ export default class S3Handler extends RemoteHandlerAbstract {
     super(remote)
     const { allowUnauthorized, host, path, username, password, protocol, region } = parse(remote.url)
     const params = {
-      accessKeyId: username,
       apiVersion: '2006-03-01',
-      endpoint: host,
-      s3ForcePathStyle: true,
-      secretAccessKey: password,
-      signatureVersion: 'v4',
-      httpOptions: {
-        timeout: 600000,
+      endpoint: `${protocol}://${host}`,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: username,
+        secretAccessKey: password,
       },
-    }
-    if (protocol === 'http') {
-      params.httpOptions.agent = new http.Agent({ keepAlive: true })
-      params.sslEnabled = false
-    } else if (protocol === 'https') {
-      params.httpOptions.agent = new https.Agent({
-        rejectUnauthorized: !allowUnauthorized,
-        keepAlive: true,
+      tls: protocol === 'https',
+      region: region || 'us-east-1',
+      requestHandler: new NodeHttpHandler({
+        socketTimeout: 600000,
+        httpAgent: new HttpAgent({
+          keepAlive: true,
+        }),
+        httpsAgent: new HttpsAgent({
+          rejectUnauthorized: !allowUnauthorized,
+          keepAlive: true
+        }),
       })
     }
-    if (region !== undefined) {
-      params.region = region
-    }
 
-    this._s3 = aws(params).s3
+    this._s3 = new S3Client(params);
 
     const parts = split(path)
     this._bucket = parts.shift()
@@ -80,7 +92,9 @@ export default class S3Handler extends RemoteHandlerAbstract {
   async _multipartCopy(oldPath, newPath) {
     const size = await this._getSize(oldPath)
     const CopySource = this._makeCopySource(oldPath)
-    const multipartParams = await this._s3.createMultipartUpload({ ...this._createParams(newPath) })
+    const multipartParams = await this._s3.send(
+      new CreateMultipartUploadCommand({ ...this._createParams(newPath) })
+    );
     const param2 = { ...multipartParams, CopySource }
     try {
       const parts = []
@@ -88,13 +102,18 @@ export default class S3Handler extends RemoteHandlerAbstract {
       while (start < size) {
         const range = `bytes=${start}-${Math.min(start + MAX_PART_SIZE, size) - 1}`
         const partParams = { ...param2, PartNumber: parts.length + 1, CopySourceRange: range }
-        const upload = await this._s3.uploadPartCopy(partParams)
+        const upload = await this._s3.send(
+          new UploadPartCopyCommand(partParams)
+        );
         parts.push({ ETag: upload.CopyPartResult.ETag, PartNumber: partParams.PartNumber })
         start += MAX_PART_SIZE
       }
-      await this._s3.completeMultipartUpload({ ...multipartParams, MultipartUpload: { Parts: parts } })
+      await this._s3.send(new CompleteMultipartUploadCommand({
+        ...multipartParams,
+        MultipartUpload: { Parts: parts }
+      }))
     } catch (e) {
-      await this._s3.abortMultipartUpload(multipartParams)
+      await this._s3.send(new AbortMultipartUploadCommand(multipartParams));
       throw e
     }
   }
@@ -102,10 +121,12 @@ export default class S3Handler extends RemoteHandlerAbstract {
   async _copy(oldPath, newPath) {
     const CopySource = this._makeCopySource(oldPath)
     try {
-      await this._s3.copyObject({
-        ...this._createParams(newPath),
-        CopySource,
-      })
+      await this._s3.send(
+        new CopyObjectCommand({
+          ...this._createParams(newPath),
+          CopySource,
+        })
+      );
     } catch (e) {
       // object > 5GB must be copied part by part
       if (e.code === 'EntityTooLarge') {
@@ -116,20 +137,24 @@ export default class S3Handler extends RemoteHandlerAbstract {
   }
 
   async _isNotEmptyDir(path) {
-    const result = await this._s3.listObjectsV2({
-      Bucket: this._bucket,
-      MaxKeys: 1,
-      Prefix: this._makePrefix(path),
-    })
-    return result.Contents.length !== 0
+    const result = await this._s3.send(
+      new ListObjectsV2Command({
+        Bucket: this._bucket,
+        MaxKeys: 1,
+        Prefix: this._makePrefix(path),
+      })
+    );
+    return result.Contents?.length > 0
   }
 
   async _isFile(path) {
     try {
-      await this._s3.headObject(this._createParams(path))
+      await this._s3.send(
+        new HeadObjectCommand(this._createParams(path))
+      );
       return true
     } catch (error) {
-      if (error.code === 'NotFound') {
+      if (error.$response.statusCode === 404) {
         return false
       }
       throw error
@@ -137,13 +162,25 @@ export default class S3Handler extends RemoteHandlerAbstract {
   }
 
   async _outputStream(path, input, { validator }) {
-    await this._s3.upload(
-      {
+    const Body = new PassThrough();
+    pipeline(input, Body, () => {});
+
+    const upload = new Upload({
+      client: this._s3,
+      queueSize: 1,
+      partSize: IDEAL_FRAGMENT_SIZE,
+      params: {
         ...this._createParams(path),
-        Body: input,
-      },
-      { partSize: IDEAL_FRAGMENT_SIZE, queueSize: 1 }
-    )
+        Body,
+      }
+    });
+
+    try {
+      await upload.done();
+    } catch(error) {
+      throw error;
+    }
+
     if (validator !== undefined) {
       try {
         await validator.call(this, path)
@@ -170,7 +207,12 @@ export default class S3Handler extends RemoteHandlerAbstract {
     },
   })
   async _writeFile(file, data, options) {
-    return this._s3.putObject({ ...this._createParams(file), Body: data })
+    return this._s3.send(
+      new PutObjectCommand({
+        ...this._createParams(file),
+        Body: data,
+      })
+    );
   }
 
   async _createReadStream(path, options) {
@@ -181,12 +223,19 @@ export default class S3Handler extends RemoteHandlerAbstract {
       throw error
     }
 
-    // https://github.com/Sullux/aws-sdk/issues/11
-    return this._s3.getObject.raw(this._createParams(path)).createReadStream()
+    const item = await this._s3.send(
+      new GetObjectCommand({ ...this._createParams(path) }),
+    );
+
+    // TODO : Ensure it is what is expected here (ReadableStream)
+    return item.Body;
   }
 
   async _unlink(path) {
-    await this._s3.deleteObject(this._createParams(path))
+    await this._s3.send(
+      new DeleteObjectCommand({ ...this._createParams(path) })
+    );
+
     if (await this._isNotEmptyDir(path)) {
       const error = new Error(`EISDIR: illegal operation on a directory, unlink '${path}'`)
       error.code = 'EISDIR'
@@ -201,13 +250,16 @@ export default class S3Handler extends RemoteHandlerAbstract {
     const Prefix = this._makePrefix(dir)
 
     do {
-      const result = await this._s3.listObjectsV2({
-        Bucket: this._bucket,
-        Prefix,
-        Delimiter: '/',
-        // will only return path until delimiters
-        ContinuationToken: NextContinuationToken,
-      })
+      const result = await this._s3.send(
+        new ListObjectsV2Command({
+          Bucket: this._bucket,
+          Prefix,
+          Delimiter: '/',
+          // will only return path until delimiters
+          ContinuationToken: NextContinuationToken,
+        })
+      );
+
       if (result.IsTruncated) {
         warn(`need pagination to browse the directory ${dir} completely`)
         NextContinuationToken = result.NextContinuationToken
@@ -216,13 +268,17 @@ export default class S3Handler extends RemoteHandlerAbstract {
       }
 
       // subdirectories
-      for (const entry of result.CommonPrefixes) {
-        uniq.add(basename(entry.Prefix))
+      if(result.CommonPrefixes) {
+        for (const entry of result.CommonPrefixes) {
+          uniq.add(basename(entry.Prefix))
+        }
       }
 
       // files
-      for (const entry of result.Contents) {
-        uniq.add(basename(entry.Key))
+      if(result.Contents) {
+        for (const entry of result.Contents) {
+          uniq.add(basename(entry.Key))
+        }
       }
     } while (NextContinuationToken !== undefined)
 
@@ -242,15 +298,27 @@ export default class S3Handler extends RemoteHandlerAbstract {
   // s3 doesn't have a rename operation, so copy + delete source
   async _rename(oldPath, newPath) {
     await this.copy(oldPath, newPath)
-    await this._s3.deleteObject(this._createParams(oldPath))
+    await this._s3.send(
+      new DeleteObjectCommand({ ...this._createParams(oldPath) })
+    );
   }
 
   async _getSize(file) {
     if (typeof file !== 'string') {
       file = file.fd
     }
-    const result = await this._s3.headObject(this._createParams(file))
-    return +result.ContentLength
+    try {
+      const result = await this._s3.send(
+        new HeadObjectCommand({ ...this._createParams(file) })
+      );
+
+      return +result.ContentLength
+    } catch(error) {
+      if(error.$response.statusCode === 404) {
+        return 0
+      }
+      throw error;
+    }
   }
 
   async _read(file, buffer, position = 0) {
@@ -260,11 +328,13 @@ export default class S3Handler extends RemoteHandlerAbstract {
     const params = this._createParams(file)
     params.Range = `bytes=${position}-${position + buffer.length - 1}`
     try {
-      const result = await this._s3.getObject(params)
+      const result = await this._s3.send(
+        new GetObjectCommand(params)
+      );
       result.Body.copy(buffer)
       return { bytesRead: result.Body.length, buffer }
     } catch (e) {
-      if (e.code === 'NoSuchKey') {
+      if (e.Code === 'NoSuchKey') {
         if (await this._isNotEmptyDir(file)) {
           const error = new Error(`${file} is a directory`)
           error.code = 'EISDIR'
@@ -293,21 +363,26 @@ export default class S3Handler extends RemoteHandlerAbstract {
     let NextContinuationToken
     const Prefix = this._makePrefix(path)
     do {
-      const result = await this._s3.listObjectsV2({
-        Bucket: this._bucket,
-        Prefix,
-        ContinuationToken: NextContinuationToken,
-      })
+      const result = await this._s3.send(
+        new ListObjectsV2Command({
+          Bucket: this._bucket,
+          Prefix,
+          ContinuationToken: NextContinuationToken,
+        })
+      );
+
       NextContinuationToken = result.IsTruncated ? result.NextContinuationToken : undefined
       await asyncEach(
         result.Contents,
         async ({ Key }) => {
           // _unlink will add the prefix, but Key contains everything
           // also we don't need to check if we delete a directory, since the list only return files
-          await this._s3.deleteObject({
-            Bucket: this._bucket,
-            Key,
-          })
+          await this._s3.send(
+            new DeleteObjectCommand({
+              Bucket: this._bucket,
+              Key,
+            })
+          );
         },
         {
           concurrency: 16,
@@ -323,9 +398,9 @@ export default class S3Handler extends RemoteHandlerAbstract {
     const uploadParams = this._createParams(file)
     let fileSize
     try {
-      fileSize = +(await this._s3.headObject(uploadParams)).ContentLength
+      fileSize = +(await this._s3.send(new HeadObjectCommand(uploadParams))).ContentLength
     } catch (e) {
-      if (e.code === 'NotFound') {
+      if (e.$response.statusCode === 404) {
         fileSize = 0
       } else {
         throw e
@@ -333,10 +408,17 @@ export default class S3Handler extends RemoteHandlerAbstract {
     }
     if (fileSize < MIN_PART_SIZE) {
       const resultBuffer = Buffer.alloc(Math.max(fileSize, position + buffer.length))
-      const fileContent = fileSize !== 0 ? (await this._s3.getObject(uploadParams)).Body : Buffer.alloc(0)
+      const fileContent = fileSize !== 0
+        ? (await this._s3.send(new GetObjectCommand(uploadParams))).Body
+        : Buffer.alloc(0)
       fileContent.copy(resultBuffer)
       buffer.copy(resultBuffer, position)
-      await this._s3.putObject({ ...uploadParams, Body: resultBuffer })
+      await this._s3.send(
+        new PutObjectCommand({
+          ...uploadParams,
+          Body: resultBuffer
+        })
+      );
       return { buffer, bytesWritten: buffer.length }
     } else {
       // using this trick: https://stackoverflow.com/a/38089437/72637
@@ -347,7 +429,9 @@ export default class S3Handler extends RemoteHandlerAbstract {
       // `edit` will always be an upload part
       // `suffix` will always be sourced from uploadPartCopy()
       // Then everything will be sliced in 5Gb parts before getting uploaded
-      const multipartParams = await this._s3.createMultipartUpload(uploadParams)
+      const multipartParams = await this._s3.send(
+        new CreateMultipartUploadCommand(uploadParams)
+      );
       const copyMultipartParams = {
         ...multipartParams,
         CopySource: this._makeCopySource(file),
@@ -377,14 +461,18 @@ export default class S3Handler extends RemoteHandlerAbstract {
           assert.strictEqual(fragmentEnd - prefixPosition <= MAX_PART_SIZE, true)
           const range = `bytes=${prefixPosition}-${fragmentEnd - 1}`
           const copyPrefixParams = { ...copyMultipartParams, PartNumber: partNumber++, CopySourceRange: range }
-          const part = await this._s3.uploadPartCopy(copyPrefixParams)
+          const part = await this._s3.send(
+            new UploadPartCopyCommand(copyPrefixParams)
+          );
           parts.push({ ETag: part.CopyPartResult.ETag, PartNumber: copyPrefixParams.PartNumber })
           prefixPosition += prefixFragmentSize
         }
         if (prefixLastFragmentSize) {
           // grab everything from the prefix that was too small to be copied, download and merge to the edit buffer.
           const downloadParams = { ...uploadParams, Range: `bytes=${prefixPosition}-${prefixSize - 1}` }
-          const prefixBuffer = prefixSize > 0 ? (await this._s3.getObject(downloadParams)).Body : Buffer.alloc(0)
+          const prefixBuffer = prefixSize > 0
+            ? (await this._s3.send(new GetObjectCommand(downloadParams))).Body
+            : Buffer.alloc(0)
           editBuffer = Buffer.concat([prefixBuffer, buffer])
           editBufferOffset -= prefixLastFragmentSize
         }
@@ -399,11 +487,11 @@ export default class S3Handler extends RemoteHandlerAbstract {
           hasSuffix = suffixSize > 0
           const prefixRange = `bytes=${complementOffset}-${complementOffset + complementSize - 1}`
           const downloadParams = { ...uploadParams, Range: prefixRange }
-          const complementBuffer = (await this._s3.getObject(downloadParams)).Body
+          const complementBuffer = (await this._s3.send(new GetObjectCommand(downloadParams))).Body
           editBuffer = Buffer.concat([editBuffer, complementBuffer])
         }
         const editParams = { ...multipartParams, Body: editBuffer, PartNumber: partNumber++ }
-        const editPart = await this._s3.uploadPart(editParams)
+        const editPart = await this._s3.send(new UploadPartCommand(editParams));
         parts.push({ ETag: editPart.ETag, PartNumber: editParams.PartNumber })
         if (hasSuffix) {
           // use ceil because the last fragment can be arbitrarily small.
@@ -419,12 +507,16 @@ export default class S3Handler extends RemoteHandlerAbstract {
             suffixFragmentOffset = fragmentEnd
           }
         }
-        await this._s3.completeMultipartUpload({
-          ...multipartParams,
-          MultipartUpload: { Parts: parts },
-        })
+        await this._s3.send(
+          new CompleteMultipartUploadCommand({
+            ...multipartParams,
+            MultipartUpload: { Parts: parts },
+          })
+        );
       } catch (e) {
-        await this._s3.abortMultipartUpload(multipartParams)
+        await this._s3.send(
+          new AbortMultipartUploadCommand(multipartParams)
+        );
         throw e
       }
     }
