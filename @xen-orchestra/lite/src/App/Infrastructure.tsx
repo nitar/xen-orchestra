@@ -1,8 +1,8 @@
 import React from 'react'
 import styled from 'styled-components'
+import { Switch, Route, RouteComponentProps } from 'react-router-dom'
 import { withState } from 'reaclette'
 import { withRouter } from 'react-router'
-import { Switch, Route, RouteComponentProps } from 'react-router-dom'
 
 import Pool from './Pool'
 import TabConsole from './TabConsole'

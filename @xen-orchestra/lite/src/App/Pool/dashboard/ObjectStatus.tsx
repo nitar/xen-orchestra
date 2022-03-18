@@ -114,7 +114,7 @@ const ObjectStatus = withState<State, Props, Effects, Computed, ParentState, Par
           </Box>
         </CircularProgressPanel>
         <GridPanel>
-          <Grid container sx={{ color: '1C1C1C' }}>
+          <Grid container>
             <Grid item xs={12}>
               <Typography sx={TYPOGRAPHY_SX} variant='h5' component='div'>
                 <IntlMessage id={type === 'VM' ? 'vms' : 'hosts'} />
