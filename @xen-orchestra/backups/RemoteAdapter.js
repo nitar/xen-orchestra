@@ -576,20 +576,30 @@ class RemoteAdapter {
     return stream
   }
 
-  async readDeltaVmBackup(metadata) {
+  async readDeltaVmBackup(metadata, settings) {
     const handler = this._handler
     const { vbds, vdis, vhds, vifs, vm } = metadata
     const dir = dirname(metadata._filename)
 
+    // filter the ignored VDIs
+    const filteredVdiRefs = []
+    const filteredVdis = {}
+    for (const [vdiRef, vdi] of Object.entries(vdis)) {
+      if (settings.mapVdisSrs[vdi.uuid] !== null) {
+        filteredVdiRefs.push(vdiRef)
+        filteredVdis[vdiRef] = vdi
+      }
+    }
+
     const streams = {}
-    await asyncMapSettled(Object.keys(vdis), async id => {
-      streams[`${id}.vhd`] = await this._createSyntheticStream(handler, join(dir, vhds[id]))
+    await asyncMapSettled(filteredVdiRefs, async ref => {
+      streams[`${ref}.vhd`] = await this._createSyntheticStream(handler, join(dir, vhds[ref]))
     })
 
     return {
       streams,
       vbds,
-      vdis,
+      vdis: filteredVdis,
       version: '1.0.0',
       vifs,
       vm,

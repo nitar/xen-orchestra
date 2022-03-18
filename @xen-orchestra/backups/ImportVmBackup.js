@@ -30,7 +30,7 @@ exports.ImportVmBackup = class ImportVmBackup {
     } else {
       assert.strictEqual(metadata.mode, 'delta')
 
-      backup = await adapter.readDeltaVmBackup(metadata)
+      backup = await adapter.readDeltaVmBackup(metadata, this._importDeltaVmSettings)
       Object.values(backup.streams).forEach(stream => watchStreamSize(stream, sizeContainer))
     }
 
